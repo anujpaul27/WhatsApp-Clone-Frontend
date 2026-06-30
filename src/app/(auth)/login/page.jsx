@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, ArrowRight, Eye, EyeOff, User, LogIn, Check } from 'lucide-react';
+import { authClient } from '../lib/auth-client';
 
 export default function WhatsAppLogin() {
   const [email, setEmail] = useState('');
@@ -48,9 +49,19 @@ export default function WhatsAppLogin() {
     setError('');
 
     try {
-      // Replace with your BetterAuth call
-      // await signIn.email({ email, password });
-      await new Promise(resolve => setTimeout(resolve, 1400));
+      
+      const {data,error} = await authClient.signIn.email({
+        email,
+        password,
+        callbackURL: '/'
+      })
+      
+      if (error)
+      {
+        setSuccess(false)
+        setError(`${error.message}`)
+        return
+      }
       
       setSuccess(true);
     } catch (err) {

@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Mail, Lock, Camera, ArrowRight, X } from 'lucide-react';
+import { authClient } from '../lib/auth-client';
+import { useRouter } from 'next/navigation';
 
 export default function WhatsAppRegister() {
   const [formData, setFormData] = useState({
@@ -10,6 +12,7 @@ export default function WhatsAppRegister() {
     email: '',
     password: '',
   });
+  const router = useRouter()
   
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -19,7 +22,7 @@ export default function WhatsAppRegister() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const IMGBB_API_KEY = "YOUR_IMGBB_API_KEY"; // ← Replace with your ImageBB key
+  const IMGBB_API_KEY = `${process.env.NEXT_PUBLIC_IMGBB_API_KEY}`; 
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -30,8 +33,8 @@ export default function WhatsAppRegister() {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image size must be less than 5MB");
+    if (file.size > 1 * 1024 * 1024) {
+      setError("Image size must be less than 1MB");
       return;
     }
 
@@ -42,17 +45,13 @@ export default function WhatsAppRegister() {
   };
 
   const uploadToImageBB = async (file) => {
-    if (!IMGBB_API_KEY || IMGBB_API_KEY === "YOUR_IMGBB_API_KEY") {
-      alert("Please add your ImageBB API key");
-      return null;
-    }
 
     setUploading(true);
     const formData = new FormData();
     formData.append("image", file);
 
     try {
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${process.env.NEXT_PUBLIC_IMGBB_API_KEY}`, {
         method: "POST",
         body: formData,
       });
@@ -82,8 +81,25 @@ export default function WhatsAppRegister() {
 
     setLoading(true);
     setError('');
+    
 
-    let avatarUrl = '';
+    try {
+      // 1. Create user with BetterAuth
+      const {data,error} = await  authClient.signUp.email ({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+      }
+    );
+
+      if (error)
+      {
+        setSuccess(false)
+        setError(`${error.message}`)
+        return
+      }
+
+      let avatarUrl = '';
 
     // Upload image first if selected
     if (image) {
@@ -94,20 +110,17 @@ export default function WhatsAppRegister() {
       }
     }
 
-    try {
-      // 1. Create user with BetterAuth
-      // const user = await auth.signUp.email({
-      //   email: formData.email,
-      //   password: formData.password,
-      //   name: formData.name,
-      // });
-
-      // 2. Update user with avatar (BetterAuth)
+    // 2. Update user with avatar (BetterAuth)
       if (avatarUrl) {
-        // await auth.updateUser({ image: avatarUrl });
+        await authClient.updateUser({ image: avatarUrl });
       }
 
-      await new Promise(resolve => setTimeout(resolve, 1400)); // Simulate API
+      if (data)
+      {
+        console.log(data);
+        router.push('/')
+      }
+      
 
       setSuccess(true);
     } catch (err) {
