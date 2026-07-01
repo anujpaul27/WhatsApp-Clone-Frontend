@@ -27,22 +27,24 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
     return () => clearInterval(interval);
   }, []);
 
+  // update user with send and received message
+  const moveUserToTop = (partnerId) => {
+    setUsers((prevUsers) => {
+      // 1. Find the user who sent or received the message
+      const targetUser = prevUsers.find((u) => u._id === partnerId);
+      if (!targetUser) return prevUsers;
+
+      // 2. Filter out the other users without target user
+      const remainingUsers = prevUsers.filter((u) => u._id !== partnerId);
+
+      // 3. Return a new array with the target user at the top
+      return [targetUser, ...remainingUsers];
+    });
+  };
+
   // Fetch users & Initialize Socket
   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:5000/api/users/${CURRENT_USER_ID}`,
-        );
-        const data = await res.json();
-        setUsers(data || allUser);
-      } catch (err) {
-        console.error("Users load failed", err);
-      }
-    };
-    fetchUsers();
-
-    const newSocket = io("http://localhost:5000");
+    const newSocket = io(`${process.env.NEXT_PUBLIC_SERVER_URL}`);
     setSocket(newSocket);
 
     return () => newSocket.disconnect();
@@ -55,7 +57,7 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
     const fetchChatHistory = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/messages/${CURRENT_USER_ID}/${activeReceiver._id}`,
+          `${process.env.NEXT_PUBLIC_SERVER_URL}/api/messages/${CURRENT_USER_ID}/${activeReceiver._id}`,
         );
         const data = await res.json();
         setMessages(data || []);
@@ -75,6 +77,12 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
       if (newMessage) {
         setMessages((prev) => [...prev, newMessage]);
       }
+
+      const partnerId =
+        newMessage.sender === CURRENT_USER_ID
+          ? newMessage.receiver
+          : newMessage.sender;
+      moveUserToTop(partnerId);
     });
 
     return () => socket.off("receiveMessage");
@@ -97,6 +105,7 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
     };
 
     socket.emit("sendMessage", messageData);
+    moveUserToTop(activeReceiver._id);
     setMessageText("");
   };
 
@@ -219,7 +228,7 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
                       }`}
                     >
                       <p className="text-[17px] leading-relaxed">{msg.text}</p>
-                      <p className="text-xs mt-1 opacity-70 text-right">
+                      <p className="text-xs mt-1 opacity-70 text-left ">
                         {new Date(
                           msg.createdAt || Date.now(),
                         ).toLocaleTimeString([], {
