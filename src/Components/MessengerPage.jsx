@@ -54,6 +54,29 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
   useEffect(() => {
     if (!socket || !activeReceiver) return;
 
+    const markMessagesAsSeen = async () => {
+      try {
+        await fetch("http://localhost:5000/api/messages/mark-as-seen", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId: activeReceiver._id,
+            receiverId: CURRENT_USER_ID,
+          }),
+        });
+
+        // লোকাল স্টেটেও ওই ইউজারের কাউন্ট ০ করে দেওয়া যেন সাথে সাথে লাল ডট উধাও হয়
+        setUsers((prevUsers) =>
+          prevUsers.map((u) =>
+            u._id === activeReceiver._id ? { ...u, unseenCount: 0 } : u,
+          ),
+        );
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    markMessagesAsSeen();
+
     const fetchChatHistory = async () => {
       try {
         const res = await fetch(
@@ -75,18 +98,42 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
 
     socket.on("receiveMessage", (newMessage) => {
       if (newMessage) {
-        setMessages((prev) => [...prev, newMessage]);
-      }
+        // যদি চ্যাট বক্স ওপেন থাকে, তবে মেসেজ লিস্টে দেখাও
+        if (
+          activeReceiver?._id === newMessage.sender ||
+          activeReceiver?._id === newMessage.receiver
+        ) {
+          setMessages((prev) => [...prev, newMessage]);
+        }
 
-      const partnerId =
-        newMessage.sender === CURRENT_USER_ID
-          ? newMessage.receiver
-          : newMessage.sender;
-      moveUserToTop(partnerId);
+        // লাইভ আনসিন কাউন্ট বাড়ানোর লজিক 🔔
+        const partnerId =
+          newMessage.sender === CURRENT_USER_ID
+            ? newMessage.receiver
+            : newMessage.sender;
+
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => {
+            if (u._id === partnerId) {
+              // যদি মেসেজটি অন্য কেউ দেয় এবং তার চ্যাট উইন্ডো ওপেন না থাকে, তবে কাউন্ট ১ বাড়াও
+              const shouldIncrement =
+                newMessage.sender !== CURRENT_USER_ID &&
+                activeReceiver?._id !== partnerId;
+              return {
+                ...u,
+                unseenCount: shouldIncrement ? (u.unseenCount || 0) + 1 : 0,
+              };
+            }
+            return u;
+          }),
+        );
+
+        moveUserToTop(partnerId);
+      }
     });
 
     return () => socket.off("receiveMessage");
-  }, [activeReceiver, socket, CURRENT_USER_ID]);
+  }, [activeReceiver, socket,CURRENT_USER_ID]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -171,10 +218,20 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
               </div>
 
               <div className="flex-1 text-left">
+                {/* username */}
                 <p className="font-medium text-lg">{user.name}</p>
                 <p className="text-sm text-[#8696A0] truncate">
-                  Tap to start chatting
+                  {/* User unseen message count */}
+                {user.unseenCount > 0 ? (
+                  <p className=" text-white font-bold ml-auto ">
+                    {user.unseenCount} unseen message 
+                  </p>
+                ): 
+                <p className="text-sm mt-1  text-[#8696A0] truncate">Tap to start chatting</p>
+                }
+                  
                 </p>
+                
               </div>
             </button>
           ))}
