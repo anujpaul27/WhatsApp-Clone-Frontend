@@ -15,6 +15,7 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
   const [messages, setMessages] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const chatEndRef = useRef(null);
+  const [onlineUsersList, setOnlineUsersList] = useState([]);
 
   // Dynamic background color (same as registration page)
   const [bgColor, setBgColor] = useState("#25D366");
@@ -46,6 +47,15 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
   useEffect(() => {
     const newSocket = io(`${process.env.NEXT_PUBLIC_SERVER_URL}`);
     setSocket(newSocket);
+
+    // 3 user online offline status update feature
+    // 3.1 register the current user as online when the socket connects
+    newSocket.emit('addUserOnline', CURRENT_USER_ID)
+
+    // 3.2 listen for the list of online users from the server
+    newSocket.on('getOnlineUsers', (users)=> {
+      setOnlineUsersList(users)
+    })
 
     return () => newSocket.disconnect();
   }, [CURRENT_USER_ID]);
@@ -200,50 +210,60 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
 
         {/* Users List */}
         <div className="flex-1 overflow-y-auto px-2 space-y-1">
-          {filteredUsers?.map((user) => (
-            <button
-              key={user?._id}
-              onClick={() => setActiveReceiver(user)}
-              className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all hover:bg-[#2A3A47] ${
-                activeReceiver?._id === user?._id ? "bg-[#2A3A47]" : ""
-              }`}
-            >
-              <div className="relative">
-                <img
-                  src={user?.image || "/default-avatar.png"}
-                  alt={user?.name}
-                  className="w-14 h-14 rounded-full object-cover border-2 border-[#25D366]/30"
-                />
-                <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-[#1F2A33]"></div>
-              </div>
-
-              <div className="flex-1 text-left">
-                {/* username */}
-                <p className="font-medium text-lg">{user.name}</p>
-                <p className="text-sm text-[#8696A0] truncate">
-                  {/* User unseen message count */}
-                {user.unseenCount > 0 ? (
-                  <p className=" text-white font-bold ml-auto ">
-                    {user.unseenCount} unseen message 
+          {filteredUsers?.map((user) => 
+          {
+            const isOnline = onlineUsersList.includes(user._id)
+            return (
+              <button
+                key={user?._id}
+                onClick={() => setActiveReceiver(user)}
+                className={`w-full flex items-center gap-4 p-3 rounded-2xl transition-all hover:bg-[#2A3A47] ${
+                  activeReceiver?._id === user?._id ? "bg-[#2A3A47]" : ""
+                }`}
+              >
+                <div className="relative">
+                  <img
+                    src={user?.image || "/default-avatar.png"}
+                    alt={user?.name}
+                    className={`w-14 h-14 rounded-full object-cover ${isOnline && 'border-2 border-[#25D366]/30'}`}
+                  />
+                  {isOnline && 
+                    <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-[#1F2A33]"></div>
+                  }
+                </div>
+  
+                <div className="flex-1 text-left">
+                  {/* username */}
+                  <p className="font-medium text-lg">{user.name}</p>
+                  <p className="text-sm text-[#8696A0] truncate">
+                    {/* User unseen message count */}
+                  {user.unseenCount > 0 ? (
+                    <p className=" text-white font-bold ml-auto ">
+                      {user.unseenCount} unseen message 
+                    </p>
+                  ): 
+                  <p className="text-sm mt-1  text-[#8696A0] truncate">Tap to start chatting</p>
+                  }
+                    
                   </p>
-                ): 
-                <p className="text-sm mt-1  text-[#8696A0] truncate">Tap to start chatting</p>
-                }
                   
-                </p>
-                
-              </div>
-            </button>
-          ))}
+                </div>
+              </button>
+            )
+          }
+          
+          )}
         </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {activeReceiver ? (
+        {activeReceiver ? 
+        (
+          
           <>
             {/* Chat Header */}
-            <div className="h-16 bg-[#1F2A33] border-b border-[#2A3A47] flex items-center px-6">
+            <div className="h-16 bg-[#1F2A33] border-b border-[#2A3A47] flex items-center px-6">  
               <button
                 onClick={() => setActiveReceiver(null)}
                 className="mr-4 lg:hidden text-[#8696A0]"
@@ -261,7 +281,10 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
                   <h2 className="font-semibold text-xl">
                     {activeReceiver.name}
                   </h2>
-                  <p className="text-xs text-[#25D366]">online</p>
+                  {onlineUsersList.includes(activeReceiver._id) ? 
+                    <p className="text-xs font-bold text-[#25D366]">online</p>
+                    : <p className="text-xs font-bold text-[#d32525]">offline</p>
+                  }
                 </div>
               </div>
             </div>
@@ -323,7 +346,8 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
               </div>
             </form>
           </>
-        ) : (
+        ) : 
+        (
           /* Empty State */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <div className="text-8xl mb-8 opacity-40">💬</div>
