@@ -16,6 +16,8 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const chatEndRef = useRef(null);
   const [onlineUsersList, setOnlineUsersList] = useState([]);
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
 
   // Dynamic background color (same as registration page)
   const [bgColor, setBgColor] = useState("#25D366");
@@ -50,12 +52,12 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
 
     // 3 user online offline status update feature
     // 3.1 register the current user as online when the socket connects
-    newSocket.emit('addUserOnline', CURRENT_USER_ID)
+    newSocket.emit("addUserOnline", CURRENT_USER_ID);
 
     // 3.2 listen for the list of online users from the server
-    newSocket.on('getOnlineUsers', (users)=> {
-      setOnlineUsersList(users)
-    })
+    newSocket.on("getOnlineUsers", (users) => {
+      setOnlineUsersList(users);
+    });
 
     return () => newSocket.disconnect();
   }, [CURRENT_USER_ID]);
@@ -142,8 +144,40 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
       }
     });
 
-    return () => socket.off("receiveMessage");
-  }, [activeReceiver, socket,CURRENT_USER_ID]);
+    // 4 Typing Indicator
+    socket.on("partnerTyping", (data) => {
+      // নিশ্চিত হওয়া যে টাইপ করা ব্যক্তিটিই আপনার বর্তমান একটিভ চ্যাট পার্টনার
+      if (data.senderId === activeReceiver?._id) {
+        setIsPartnerTyping(data.isTyping);
+      }
+    });
+
+    return () => {
+      socket.off("receiveMessage");
+      socket.off("partnerTyping");
+    };
+  }, [activeReceiver, socket, CURRENT_USER_ID]);
+
+  // 4.1 Send typing event when user is typing
+  const handleInputChange = (e) => {
+    setMessageText(e.target.value);
+
+    if (!socket || !activeReceiver) return;
+
+    // create unique roomId
+    const roomId = [CURRENT_USER_ID, activeReceiver._id].sort().join("-");
+
+    // send typing event to backend
+    socket.emit("typing", { roomId, senderId: CURRENT_USER_ID });
+
+    // if timer is already running, clear it to reset the countdown
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // after 3 second send 'stopTyping' because your typing is stop
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stopTyping", { roomId, senderId: CURRENT_USER_ID });
+    }, 3000);
+  };
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -164,6 +198,9 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
     socket.emit("sendMessage", messageData);
     moveUserToTop(activeReceiver._id);
     setMessageText("");
+
+    // 4.2 Stop typing event when message is sent
+    socket.emit("stopTyping", { roomId, senderId: CURRENT_USER_ID });
   };
 
   const filteredUsers = users.filter((user) =>
@@ -210,9 +247,8 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
 
         {/* Users List */}
         <div className="flex-1 overflow-y-auto px-2 space-y-1">
-          {filteredUsers?.map((user) => 
-          {
-            const isOnline = onlineUsersList.includes(user._id)
+          {filteredUsers?.map((user) => {
+            const isOnline = onlineUsersList.includes(user._id);
             return (
               <button
                 key={user?._id}
@@ -225,45 +261,41 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
                   <img
                     src={user?.image || "/default-avatar.png"}
                     alt={user?.name}
-                    className={`w-14 h-14 rounded-full object-cover ${isOnline && 'border-2 border-[#25D366]/30'}`}
+                    className={`w-14 h-14 rounded-full object-cover ${isOnline && "border-2 border-[#25D366]/30"}`}
                   />
-                  {isOnline && 
+                  {isOnline && (
                     <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-[#1F2A33]"></div>
-                  }
+                  )}
                 </div>
-  
+
                 <div className="flex-1 text-left">
                   {/* username */}
                   <p className="font-medium text-lg">{user.name}</p>
                   <p className="text-sm text-[#8696A0] truncate">
                     {/* User unseen message count */}
-                  {user.unseenCount > 0 ? (
-                    <p className=" text-white font-bold ml-auto ">
-                      {user.unseenCount} unseen message 
-                    </p>
-                  ): 
-                  <p className="text-sm mt-1  text-[#8696A0] truncate">Tap to start chatting</p>
-                  }
-                    
+                    {user.unseenCount > 0 ? (
+                      <p className=" text-white font-bold ml-auto ">
+                        {user.unseenCount} unseen message
+                      </p>
+                    ) : (
+                      <p className="text-sm mt-1  text-[#8696A0] truncate">
+                        Tap to start chatting
+                      </p>
+                    )}
                   </p>
-                  
                 </div>
               </button>
-            )
-          }
-          
-          )}
+            );
+          })}
         </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {activeReceiver ? 
-        (
-          
+        {activeReceiver ? (
           <>
             {/* Chat Header */}
-            <div className="h-16 bg-[#1F2A33] border-b border-[#2A3A47] flex items-center px-6">  
+            <div className="h-16 bg-[#1F2A33] border-b border-[#2A3A47] flex items-center px-6">
               <button
                 onClick={() => setActiveReceiver(null)}
                 className="mr-4 lg:hidden text-[#8696A0]"
@@ -281,10 +313,16 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
                   <h2 className="font-semibold text-xl">
                     {activeReceiver.name}
                   </h2>
-                  {onlineUsersList.includes(activeReceiver._id) ? 
-                    <p className="text-xs font-bold text-[#25D366]">online</p>
-                    : <p className="text-xs font-bold text-[#d32525]">offline</p>
-                  }
+
+                  {/* Typing Indicator */}
+                  {isPartnerTyping ? (
+                    <p className="text-sm text-[#25D366]">Typing...</p>
+                  ) : onlineUsersList.includes(activeReceiver._id) ? (
+                    <p className="text-sm font-bold text-[#25D366]">online</p>
+                  ) : (
+                    <p className="text-sm font-bold text-[#d32525]">offline</p>
+                  )}
+                  <div ref={chatEndRef} />
                 </div>
               </div>
             </div>
@@ -332,7 +370,10 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
                 <input
                   type="text"
                   value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
+                  onChange={(e) => {
+                    setMessageText(e.target.value);
+                    handleInputChange(e);
+                  }}
                   placeholder={`Message ${activeReceiver.name}...`}
                   className="flex-1 bg-[#2A3A47] border border-[#3A4A57] focus:border-[#25D366] rounded-3xl px-6 py-4 outline-none text-lg"
                 />
@@ -346,8 +387,7 @@ export default function WhatsAppMessenger({ userId, allUser = [] }) {
               </div>
             </form>
           </>
-        ) : 
-        (
+        ) : (
           /* Empty State */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <div className="text-8xl mb-8 opacity-40">💬</div>
